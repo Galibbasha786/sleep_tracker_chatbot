@@ -1,44 +1,54 @@
+
 document.addEventListener('DOMContentLoaded', function() {
+    // Navigation
+    const navButtons = document.querySelectorAll('.nav-btn');
+    const sections = document.querySelectorAll('.section');
+    
+    navButtons.forEach(button => {
+        button.addEventListener('click', function() {
+            const targetSection = this.getAttribute('data-section');
+            
+            // Update active nav button
+            navButtons.forEach(btn => btn.classList.remove('active'));
+            this.classList.add('active');
+            
+            // Show target section
+            sections.forEach(section => {
+                section.classList.remove('active');
+                if (section.id === targetSection) {
+                    section.classList.add('active');
+                }
+            });
+            
+            // Load data if needed
+            if (targetSection === 'dashboard') {
+                updateDashboard();
+            } else if (targetSection === 'journal') {
+                loadJournalEntries();
+            }
+        });
+    });
+    
+    // Chatbot functionality
     const chatBox = document.getElementById('chat-box');
     const userInput = document.getElementById('user-input');
     const sendBtn = document.getElementById('send-btn');
-    const sleepForm = document.getElementById('sleep-form');
-    const historyList = document.getElementById('history-list');
-
-    // Set default date to today
-    document.getElementById('date').valueAsDate = new Date();
-
-    // Load sleep history
-    loadSleepHistory();
-
-    // Send message when button is clicked or Enter is pressed
+    
     sendBtn.addEventListener('click', sendMessage);
     userInput.addEventListener('keypress', function(e) {
-        if (e.key === 'Enter') {
-            sendMessage();
-        }
+        if (e.key === 'Enter') sendMessage();
     });
-
-    // Handle sleep form submission
-    sleepForm.addEventListener('submit', function(e) {
-        e.preventDefault();
-        logSleep();
-    });
-
-    // Initial greeting
-    addBotMessage("Hello! I'm your Sleep Tracker assistant. How can I help you with your sleep today?");
-
+    
     function sendMessage() {
         const message = userInput.value.trim();
-        if (message === '') return;
-
-        addUserMessage(message);
-        userInput.value = '';
-
-        // Show typing indicator
-        const typingIndicator = addBotMessage('...');
+        if (!message) return;
         
-        // Send to backend
+        addMessage(message, 'user');
+        userInput.value = '';
+        
+        // Show typing indicator
+        const typingIndicator = addMessage('...', 'bot');
+        
         fetch('/api/chat', {
             method: 'POST',
             headers: {
@@ -48,26 +58,45 @@ document.addEventListener('DOMContentLoaded', function() {
         })
         .then(response => response.json())
         .then(data => {
-            // Remove typing indicator and add actual response
             chatBox.removeChild(typingIndicator);
-            addBotMessage(data.response);
+            addMessage(data.response, 'bot');
         })
         .catch(error => {
             chatBox.removeChild(typingIndicator);
-            addBotMessage("Sorry, I'm having trouble connecting. Please try again later.");
+            addMessage("Sorry, I'm having trouble connecting.", 'bot');
             console.error('Error:', error);
         });
     }
-
-    function logSleep() {
+    
+    function addMessage(text, sender) {
+        const messageDiv = document.createElement('div');
+        messageDiv.classList.add('message', `${sender}-message`);
+        messageDiv.textContent = text;
+        chatBox.appendChild(messageDiv);
+        chatBox.scrollTop = chatBox.scrollHeight;
+        return messageDiv;
+    }
+    
+    // Sleep logging
+    const sleepForm = document.getElementById('sleep-form');
+    const qualityInput = document.getElementById('quality');
+    const qualityValue = document.getElementById('quality-value');
+    
+    qualityInput.addEventListener('input', function() {
+        qualityValue.textContent = this.value;
+    });
+    
+    sleepForm.addEventListener('submit', function(e) {
+        e.preventDefault();
+        
         const sleepData = {
             date: document.getElementById('date').value,
             bedtime: document.getElementById('bedtime').value,
             waketime: document.getElementById('waketime').value,
-            quality: document.getElementById('quality').value,
+            quality: qualityInput.value,
             notes: document.getElementById('notes').value
         };
-
+        
         fetch('/api/log_sleep', {
             method: 'POST',
             headers: {
@@ -78,62 +107,133 @@ document.addEventListener('DOMContentLoaded', function() {
         .then(response => response.json())
         .then(data => {
             if (data.status === 'success') {
-                addBotMessage(`Great! I've logged your sleep from ${sleepData.bedtime} to ${sleepData.waketime} with quality ${sleepData.quality}/10.`);
-                loadSleepHistory();
+                alert('Sleep logged successfully!');
                 sleepForm.reset();
                 document.getElementById('date').valueAsDate = new Date();
+                qualityValue.textContent = '5';
             } else {
-                addBotMessage("Oops! There was a problem logging your sleep. Please try again.");
+                alert('Error logging sleep: ' + (data.message || 'Unknown error'));
             }
         })
         .catch(error => {
-            addBotMessage("Sorry, I couldn't log your sleep right now. Please try again later.");
+            alert('Failed to log sleep. Please try again.');
             console.error('Error:', error);
         });
-    }
-
-    function loadSleepHistory() {
-        fetch('/api/get_sleep_data')
+    });
+    
+    // Journal functionality
+    const saveJournalBtn = document.getElementById('save-journal');
+    
+    saveJournalBtn.addEventListener('click', function() {
+        const entry = document.getElementById('journal-entry').value.trim();
+        if (!entry) return;
+        
+        fetch('/api/journal', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ entry: entry })
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.status === 'success') {
+                document.getElementById('journal-entry').value = '';
+                loadJournalEntries();
+            }
+        })
+        .catch(error => {
+            console.error('Error:', error);
+        });
+    });
+    
+    function loadJournalEntries() {
+        fetch('/api/journal_entries')
             .then(response => response.json())
             .then(data => {
-                historyList.innerHTML = '';
-                if (data.data.length === 0) {
-                    historyList.innerHTML = '<p>No sleep entries yet. Log your first night!</p>';
+                const entriesList = document.getElementById('entries-list');
+                entriesList.innerHTML = '';
+                
+                if (data.entries.length === 0) {
+                    entriesList.innerHTML = '<p>No journal entries yet.</p>';
                 } else {
-                    data.data.forEach(entry => {
-                        const entryElement = document.createElement('div');
-                        entryElement.className = 'sleep-entry';
-                        entryElement.innerHTML = `
-                            <p><strong>${entry.date}</strong></p>
-                            <p>Bedtime: ${entry.bedtime} | Wake: ${entry.waketime}</p>
-                            <p>Quality: ${entry.quality}/10</p>
-                            ${entry.notes ? `<p>Notes: ${entry.notes}</p>` : ''}
+                    data.entries.forEach(entry => {
+                        const entryDiv = document.createElement('div');
+                        entryDiv.className = 'entry';
+                        entryDiv.innerHTML = `
+                            <div class="entry-date">${entry.date}</div>
+                            <div class="entry-text">${entry.entry}</div>
                         `;
-                        historyList.appendChild(entryElement);
+                        entriesList.appendChild(entryDiv);
                     });
                 }
             })
             .catch(error => {
-                console.error('Error loading sleep history:', error);
-                historyList.innerHTML = '<p>Error loading sleep history</p>';
+                console.error('Error:', error);
             });
     }
-
-    function addUserMessage(text) {
-        const messageDiv = document.createElement('div');
-        messageDiv.className = 'message user-message';
-        messageDiv.textContent = text;
-        chatBox.appendChild(messageDiv);
-        chatBox.scrollTop = chatBox.scrollHeight;
-        return messageDiv;
+    
+    // Dashboard functionality
+    function updateDashboard() {
+        fetch('/api/sleep_data')
+            .then(response => response.json())
+            .then(data => {
+                if (data.data.length > 0) {
+                    // Calculate average sleep duration
+                    let totalMinutes = 0;
+                    let totalQuality = 0;
+                    
+                    data.data.forEach(entry => {
+                        const bedtime = new Date(`2000-01-01T${entry.bedtime}`);
+                        const waketime = new Date(`2000-01-01T${entry.waketime}`);
+                        const diff = waketime - bedtime;
+                        totalMinutes += diff / (1000 * 60);
+                        totalQuality += parseInt(entry.quality);
+                    });
+                    
+                    const avgMinutes = totalMinutes / data.data.length;
+                    const hours = Math.floor(avgMinutes / 60);
+                    const minutes = Math.round(avgMinutes % 60);
+                    
+                    document.getElementById('avg-sleep').textContent = 
+                        `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}`;
+                    
+                    document.getElementById('avg-quality').textContent = 
+                        `${(totalQuality / data.data.length).toFixed(1)}/10`;
+                    
+                    // Display recent sleep entries
+                    const recentSleep = document.getElementById('recent-sleep');
+                    recentSleep.innerHTML = '';
+                    
+                    const recentEntries = data.data.slice(0, 5);
+                    recentEntries.forEach(entry => {
+                        const entryDiv = document.createElement('div');
+                        entryDiv.className = 'entry';
+                        entryDiv.innerHTML = `
+                            <div class="entry-date">${entry.date}</div>
+                            <div>${entry.bedtime} - ${entry.waketime}</div>
+                            <div>Quality: ${entry.quality}/10</div>
+                        `;
+                        recentSleep.appendChild(entryDiv);
+                    });
+                } else {
+                    document.getElementById('recent-sleep').innerHTML = '<p>No sleep data yet.</p>';
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+            });
     }
-
-    function addBotMessage(text) {
-        const messageDiv = document.createElement('div');
-        messageDiv.className = 'message bot-message';
-        messageDiv.textContent = text;
-        chatBox.appendChild(messageDiv);
-        chatBox.scrollTop = chatBox.scrollHeight;
-        return messageDiv;
-    }
+    
+    // Set default date to today
+    document.getElementById('date').valueAsDate = new Date();
+    
+    // Initial load
+    updateDashboard();
+    loadJournalEntries();
+    
+    // Initial chatbot greeting
+    setTimeout(() => {
+        addMessage("Hello! I'm your Sleep Assistant. Ask me about sleep hygiene, insomnia, or any sleep-related questions.", 'bot');
+    }, 1000);
 });

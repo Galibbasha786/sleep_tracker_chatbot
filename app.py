@@ -1,76 +1,84 @@
-from flask import Flask, request, jsonify, render_template
+from flask import Flask, render_template, request, jsonify
 import google.generativeai as genai
 import os
 from datetime import datetime
 
+import json
 app = Flask(__name__)
 
 # Configure Gemini API
-GOOGLE_API_KEY = os.getenv("AIzaSyAlszM0j4iAFCXLUoRGr85snoyPpT46TXk") or "AIzaSyAlszM0j4iAFCXLUoRGr85snoyPpT46TXk"  # Replace with your key
+GOOGLE_API_KEY = os.getenv('AIzaSyAlszM0j4iAFCXLUoRGr85snoyPpT46TXk') or 'AIzaSyAlszM0j4iAFCXLUoRGr85snoyPpT46TXk'
 genai.configure(api_key=GOOGLE_API_KEY)
+model = genai.GenerativeModel('gemini-1.5-flash')
 
-# Initialize the model (use 'gemini-1.0-pro' or 'gemini-pro' based on availability)
-try:
-    model = genai.GenerativeModel("gemini-1.5-flash")  # Updated model name
-    
-except Exception as e:
-    print(f"⚠️ Model initialization error: {e}")
-    print("Available models:")
-    for m in genai.list_models():
-        if "generateContent" in m.supported_generation_methods:
-            print(f"→ {m.name}")
-    model = genai.GenerativeModel("gemini-1.5-flash.")  # Fallback (older versions)
+# Database simulation
+sleep_data = []
+journal_entries = []
 
-# In-memory sleep data storage (replace with a DB in production)
-sleep_logs = []
-
-@app.route("/")
+@app.route('/')
 def home():
-    return render_template("index.html")
+    return render_template('index.html')
 
-@app.route("/api/chat", methods=["POST"])
+# Chatbot API
+@app.route('/api/chat', methods=['POST'])
 def chat():
-    user_message = request.json.get("message", "").strip()
+    user_message = request.json.get('message')
     
-    if not user_message:
-        return jsonify({"response": "Please enter a message."})
-
     try:
-        # Custom sleep-focused prompt
         prompt = f"""
-        You are a Sleep Coach AI. Help users track sleep, give advice, and analyze patterns.
-        Be supportive, concise, and scientific. Today's date: {datetime.now().strftime('%Y-%m-%d')}.
-
+        You are a sleep expert assistant. Provide science-backed advice about:
+        - Sleep hygiene
+        - Insomnia solutions
+        - Sleep tracking interpretation
+        - Relaxation techniques
+        - track the sleep
+        - provide graphical visualization sleep track
+        Current date: {datetime.now().strftime('%Y-%m-%d')}
+        
         User: {user_message}
         """
         
         response = model.generate_content(prompt)
-        return jsonify({"response": response.text})
-    
+        return jsonify({'response': response.text})
     except Exception as e:
-        return jsonify({"response": f"❌ Error: {str(e)}"}), 500
-        print("Available models:")
-for m in genai.list_models():
-    print(m.name)
+        return jsonify({'response': f"Error: {str(e)}"})
 
-@app.route("/api/log_sleep", methods=["POST"])
+# Sleep Tracking API
+@app.route('/api/log_sleep', methods=['POST'])
 def log_sleep():
     try:
         data = request.json
-        sleep_logs.append({
-            "date": data.get("date"),
-            "bedtime": data.get("bedtime"),
-            "wake_time": data.get("wake_time"),
-            "quality": data.get("quality", 5),
-            "notes": data.get("notes", "")
+        sleep_data.append({
+            'date': data.get('date'),
+            'bedtime': data.get('bedtime'),
+            'waketime': data.get('waketime'),
+            'quality': data.get('quality'),
+            'notes': data.get('notes')
         })
-        return jsonify({"status": "success", "message": "Sleep logged! 🌙"})
+        return jsonify({'status': 'success'})
     except Exception as e:
-        return jsonify({"status": "error", "message": str(e)}), 400
+        return jsonify({'status': 'error', 'message': str(e)})
 
-@app.route("/api/get_logs", methods=["GET"])
-def get_logs():
-    return jsonify({"logs": sleep_logs})
+# Journal API
+@app.route('/api/journal', methods=['POST'])
+def journal():
+    try:
+        journal_entries.append({
+            'date': datetime.now().strftime('%Y-%m-%d'),
+            'entry': request.json.get('entry')
+        })
+        return jsonify({'status': 'success'})
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)})
 
-if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5001, debug=True)
+# Data retrieval APIs
+@app.route('/api/sleep_data', methods=['GET'])
+def get_sleep_data():
+    return jsonify({'data': sleep_data})
+
+@app.route('/api/journal_entries', methods=['GET'])
+def get_journal_entries():
+    return jsonify({'entries': journal_entries})
+
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=5001, debug=True)
